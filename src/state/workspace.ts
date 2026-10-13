@@ -16,6 +16,8 @@ export interface WorkspaceState {
 export type WorkspaceAction =
   | { type: 'addSources'; sources: SourceMeta[] }
   | { type: 'removeSegment'; segmentId: string }
+  /** Removes every page of a file, including from undo history (file removed from the upload list). */
+  | { type: 'removeSource'; sourceId: string }
   | { type: 'renameSegment'; segmentId: string; name: string }
   | { type: 'toggleExpanded'; segmentId: string }
   | { type: 'setAllExpanded'; expanded: boolean }
@@ -131,6 +133,24 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         state,
         state.segments.filter((s) => s.id !== action.segmentId),
       )
+
+    case 'removeSource': {
+      // Removing a file from the upload list is final: purge it from history too,
+      // so its memory is actually freed and undo can't resurrect pages without data.
+      const strip = (segments: Segment[]) => {
+        if (!segments.some((s) => s.pages.some((p) => p.sourceId === action.sourceId))) return segments
+        return segments
+          .map((s) => ({ ...s, pages: s.pages.filter((p) => p.sourceId !== action.sourceId) }))
+          .filter((s) => s.pages.length > 0)
+      }
+      const segments = strip(state.segments)
+      const past = state.past.map(strip)
+      const future = state.future.map(strip)
+      if (segments === state.segments && past.every((p, i) => p === state.past[i]) && future.every((f, i) => f === state.future[i])) {
+        return state
+      }
+      return collectSources({ ...state, segments, past, future })
+    }
 
     case 'renameSegment': {
       const name = action.name.trim()

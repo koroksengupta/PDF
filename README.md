@@ -4,6 +4,14 @@ Merge, split, reorder, rotate and trim PDFs **entirely in your browser**. Files 
 `ArrayBuffer`s and processed by [pdf-lib](https://pdf-lib.js.org/) in a Web Worker. Nothing is
 uploaded, and there is no backend.
 
+## How it works
+
+1. **Upload first.** The home screen is a single upload area (or drop files anywhere on the page). Your files are listed with page counts and sizes, and you can add more or remove any.
+2. **Choose what to do:** **Merge PDFs** or **Split a PDF**. With several files, the Split card asks which file to split.
+3. **Work in the tool.** "← Your files" in the header (or the browser's Back button) returns to the file list without losing work in either tool. "Start over" clears everything.
+
+Files exist only in memory, so a reload always starts at the upload screen.
+
 ## Features
 
 - **Ingestion:** drag and drop anywhere on the page, or use the file picker, to add many PDFs at once. Each file shows its name, page count and size.
@@ -15,20 +23,19 @@ uploaded, and there is no backend.
 - **Output options:** custom file name (sanitized, default `stitched_document.pdf`), blank separator pages between cards, and footer page numbers (4 formats, left/center/right, start number, font size). Page numbers stay upright at the visual bottom of rotated pages. Separators count toward the numbering but are left blank.
 - **Stitching:** a progress bar with phases, cancel support, automatic download, and "Download again" / "Open" afterwards. The result is flagged as out of date once you edit the workspace.
 
-### Split (the **Split** tab, or `#split` in the URL)
+### Split
 
-- **One PDF at a time:** drop or pick a file; if several are dropped, the first is used and you're told so.
+- **One PDF at a time:** pick it on the home screen, or drop a different one inside the tool. If several are dropped there, the first is used and you're told so.
 - **Number of parts:** choose 2 to N parts (N = page count, up to 200). You then get **N − 1 "split after page" inputs**, prefilled with an even split. For example, 3 parts give you 2 page numbers.
 - **Live preview:** each part's page range is shown as you type. Invalid entries (empty, out of range, or not after the previous split) are flagged inline, and splitting is blocked until they're fixed.
 - **Visual cutting:** pages show in a grid colour-coded by part. Click the gap between two pages to add or remove a cut, and the inputs update to match. "Distribute evenly" resets to equal parts.
 - **Output:** a file name prefix (`prefix_part2_p6-30.pdf`) and delivery as **one ZIP** or **separate PDFs**. Download links for each file stay available afterwards, and the result is flagged as out of date when the settings change. Pages keep their original rotation.
 
-Switching between the Stitch and Split tabs keeps the work in both.
 
 ### Robustness
 
 - Errors are reported in toasts. Covered cases: non-PDFs, files that only look like PDFs, corrupted and empty files, password-protected or encrypted files, single files over 250 MB, and workspaces over 1 GB in total.
-- Memory: source bytes live outside React state. Each thumbnail object URL is revoked when its file leaves the workspace (including undo history), when you clear the workspace, or when the app unmounts. pdf.js documents are destroyed at the same points, and canvases are released right after encoding.
+- Memory: source bytes live outside React state. They are shared by the file list, Merge (including its undo history) and Split, and freed as soon as none of them uses the file. Each thumbnail object URL is revoked when its file leaves the workspace (including undo history), when you clear the workspace, or when the app unmounts. pdf.js documents are destroyed at the same points, and canvases are released right after encoding.
 - Performance: thumbnails render only while visible, at most 2 at a time, newest first. Rotation is applied with CSS, so rotating never re-renders a thumbnail. Large PDFs are parsed and merged off the main thread.
 
 ### Known limitations

@@ -110,17 +110,17 @@ export function useStitch() {
         resultUrl.current = url
         setStatus({ state: 'done', url, fileName, size: blob.size, pages, signature })
         triggerDownload(url, fileName)
-        push({ kind: 'success', title: 'PDF stitched', description: `${fileName} is downloading.` })
+        push({ kind: 'success', title: 'PDFs merged', description: `${fileName} is downloading.` })
       } catch (err) {
         cancelAnimationFrame(frame.current)
         frame.current = 0
         setStatus({ state: 'idle' })
         if (err instanceof CancelledError) {
-          push({ kind: 'info', title: 'Stitching cancelled' })
+          push({ kind: 'info', title: 'Merge cancelled' })
         } else {
           push({
             kind: 'error',
-            title: 'Stitching failed',
+            title: 'Merge failed',
             description: err instanceof Error ? err.message : 'An unexpected error occurred.',
           })
         }
