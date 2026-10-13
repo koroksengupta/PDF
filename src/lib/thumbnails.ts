@@ -143,6 +143,14 @@ class ThumbnailService {
     this.listeners.get(job.key)?.forEach((l) => l())
   }
 
+  /** Size of a page as displayed (after its own rotation), in points. */
+  async pageSize(sourceId: string, index: number): Promise<{ width: number; height: number }> {
+    const doc = await this.getDoc(sourceId)
+    const page = await doc.getPage(index + 1)
+    const { width, height } = page.getViewport({ scale: 1 })
+    return { width, height }
+  }
+
   /** Revokes a single preview, e.g. the large one shown in the page viewer. */
   evict(sourceId: string, index: number, size: number) {
     const key = ThumbnailService.key(sourceId, index, size)

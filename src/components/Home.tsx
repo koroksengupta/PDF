@@ -1,4 +1,4 @@
-import { ArrowRight, Layers, RotateCcw, Scissors, ShieldCheck, X } from 'lucide-react'
+import { ArrowRight, ClipboardList, Droplets, Hash, Layers, PenTool, RotateCcw, Scissors, ShieldCheck, X } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 import type { PendingFile } from '../hooks/useIngest'
 import { formatBytes, plural } from '../lib/format'
@@ -6,6 +6,16 @@ import type { SourceMeta } from '../lib/types'
 import { DropZone } from './DropZone'
 import { FileDropOverlay } from './FileDropOverlay'
 import { Thumbnail } from './Thumbnail'
+
+export type SingleFileTool = 'split' | 'edit' | 'form' | 'watermark' | 'numbers'
+
+const ONE_FILE_TOOLS: { id: SingleFileTool; title: string; description: string; icon: typeof Layers }[] = [
+  { id: 'edit', title: 'Edit & sign', description: 'Add text, your signature, highlights, drawings, shapes and sticky notes.', icon: PenTool },
+  { id: 'split', title: 'Split', description: 'Cut the PDF into parts at the pages you choose.', icon: Scissors },
+  { id: 'form', title: 'Fill form', description: 'Fill in a PDF form’s fields and optionally lock the answers.', icon: ClipboardList },
+  { id: 'watermark', title: 'Watermark', description: 'Stamp text like “Confidential” or your logo across pages.', icon: Droplets },
+  { id: 'numbers', title: 'Page numbers', description: 'Number pages in the header or footer, in any format.', icon: Hash },
+]
 
 interface Props {
   active: boolean
@@ -15,9 +25,10 @@ interface Props {
   onRemove: (id: string) => void
   onStartOver: () => void
   onMerge: () => void
-  splitId: string | null
-  onSplitIdChange: (id: string) => void
-  onSplit: () => void
+  /** File the one-file tools will open. */
+  toolFileId: string | null
+  onToolFileChange: (id: string) => void
+  onOpenTool: (tool: SingleFileTool) => void
 }
 
 /** Step 1: upload. Step 2: choose what to do with the files. */
@@ -110,11 +121,11 @@ function FileList({ files, pending, onFiles, onRemove, onStartOver }: Props) {
   )
 }
 
-function Actions({ files, pending, onMerge, splitId, onSplitIdChange, onSplit }: Props) {
+function Actions({ files, pending, onMerge, toolFileId, onToolFileChange, onOpenTool }: Props) {
   const selectId = useId()
   const busy = pending.length > 0
   const pages = files.reduce((n, f) => n + f.pageCount, 0)
-  const splitFile = files.find((f) => f.id === splitId) ?? files[0]
+  const target = files.find((f) => f.id === toolFileId) ?? files[0]
   const single = files.length === 1
 
   return (
@@ -122,37 +133,33 @@ function Actions({ files, pending, onMerge, splitId, onSplitIdChange, onSplit }:
       <h2 id="actions-heading" className="mb-3 text-lg font-semibold text-slate-900">
         What would you like to do?
       </h2>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <ActionCard
-          icon={<Layers className="size-6" aria-hidden />}
-          title="Merge PDFs"
-          description={
-            single
-              ? 'Reorder, rotate or remove pages and save a new PDF. Add more files to combine them.'
-              : `Combine ${plural(files.length, 'file')} (${plural(pages, 'page')}) into one PDF. Reorder, rotate or remove pages first.`
-          }
-          action="Merge"
-          onClick={onMerge}
-          disabled={busy}
-        />
-        <ActionCard
-          icon={<Scissors className="size-6" aria-hidden />}
-          title="Split a PDF"
-          description="Cut a PDF into as many parts as you like, at the pages you choose."
-          action="Split"
-          onClick={onSplit}
-          disabled={busy || !splitFile}
-        >
-          {!single && (
-            <div className="mt-3">
-              <label htmlFor={selectId} className="mb-1 block text-xs font-medium text-slate-600">
-                File to split
-              </label>
+      <ActionCard
+        icon={<Layers className="size-6" aria-hidden />}
+        title="Merge PDFs"
+        description={
+          single
+            ? 'Reorder, rotate or remove pages and save a new PDF. Add more files to combine them.'
+            : `Combine ${plural(files.length, 'file')} (${plural(pages, 'page')}) into one PDF. Reorder, rotate or remove pages first.`
+        }
+        action="Merge"
+        onClick={onMerge}
+        disabled={busy}
+        wide
+      />
+
+      <div className="mt-6 rounded-2xl bg-white/60 p-4 ring-1 ring-slate-200 sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h3 className="text-sm font-semibold text-slate-900">Work on one file</h3>
+          {single ? (
+            <span className="truncate text-sm text-slate-500">{target?.name}</span>
+          ) : (
+            <>
+              <label htmlFor={selectId} className="sr-only">File to work on</label>
               <select
                 id={selectId}
-                value={splitFile?.id}
-                onChange={(e) => onSplitIdChange(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                value={target?.id}
+                onChange={(e) => onToolFileChange(e.target.value)}
+                className="min-w-0 max-w-full flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:flex-none"
               >
                 {files.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -160,15 +167,40 @@ function Actions({ files, pending, onMerge, splitId, onSplitIdChange, onSplit }:
                   </option>
                 ))}
               </select>
-            </div>
+            </>
           )}
-          {splitFile && splitFile.pageCount < 2 && (
-            <p className="mt-2 text-xs text-amber-700">“{splitFile.name}” has a single page.</p>
-          )}
-        </ActionCard>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {ONE_FILE_TOOLS.map(({ id, title, description, icon: Icon }) => {
+            const disabled = busy || !target || (id === 'split' && target.pageCount < 2)
+            return (
+              <button
+                key={id}
+                type="button"
+                disabled={disabled}
+                onClick={() => onOpenTool(id)}
+                aria-label={title}
+                className="group flex items-start gap-3 rounded-xl bg-white p-4 text-left shadow-sm ring-1 ring-slate-200 transition hover:shadow-md hover:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-sm disabled:hover:ring-slate-200"
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1 font-semibold text-slate-900">
+                    {title}
+                    <ArrowRight className="size-4 text-indigo-500 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" aria-hidden />
+                  </span>
+                  <span className="mt-0.5 block text-sm text-slate-600">
+                    {id === 'split' && target && target.pageCount < 2 ? 'Needs a file with at least 2 pages.' : description}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
-      <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-slate-500">
-        <ShieldCheck className="size-3.5 text-emerald-600" aria-hidden /> Your files stay on this device. You can come back
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-500">
+        <ShieldCheck className="size-3.5 shrink-0 text-emerald-600" aria-hidden /> Your files stay on this device. You can come back
         here at any time without losing work.
       </p>
     </section>
@@ -183,6 +215,7 @@ function ActionCard({
   onClick,
   disabled,
   children,
+  wide = false,
 }: {
   icon: ReactNode
   title: string
@@ -191,15 +224,17 @@ function ActionCard({
   onClick: () => void
   disabled: boolean
   children?: ReactNode
+  wide?: boolean
 }) {
   return (
-    <div className="flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md hover:ring-indigo-200">
+    <div className={`flex rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md hover:ring-indigo-200 ${wide ? 'flex-col gap-4 sm:flex-row sm:items-center' : 'flex-col'}`}>
       <div className="flex size-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">{icon}</div>
-      <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
-      <p className="mt-1 text-sm text-slate-600">{description}</p>
-      {children}
-      {/* Pinned to the bottom so both cards' buttons line up. */}
-      <div className="mt-auto pt-5">
+      <div className={wide ? 'min-w-0 flex-1' : ''}>
+        <h3 className={`${wide ? '' : 'mt-4'} text-base font-semibold text-slate-900`}>{title}</h3>
+        <p className="mt-1 text-sm text-slate-600">{description}</p>
+        {children}
+      </div>
+      <div className={wide ? 'shrink-0' : 'mt-auto pt-5'}>
         <button
           type="button"
           onClick={onClick}

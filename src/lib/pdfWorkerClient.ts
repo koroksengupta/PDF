@@ -1,5 +1,6 @@
 import { PdfInspectError } from './errors'
 import type { WorkerRequest, WorkerResponse } from './pdfWorkerProtocol'
+import type { FormInfo, TransformOp } from './editTypes'
 import type { PageRange } from './split'
 import type { InspectResult, SplitProgress, StitchPlan, StitchProgress } from './types'
 
@@ -89,6 +90,10 @@ export class PdfWorkerClient {
   ): Promise<T> {
     const engine = await import('./pdfEngine')
     if (msg.type === 'inspect') return (await engine.inspectPdf(msg.bytes)) as T
+    if (msg.type === 'transform' || msg.type === 'readForm') {
+      const edits = await import('./edits')
+      return (msg.type === 'transform' ? await edits.transformPdf(msg.bytes, msg.op) : await edits.readFormInfo(msg.bytes)) as T
+    }
     if (msg.type === 'split') return (await engine.splitPdf(msg.bytes, msg.ranges, msg.title, onProgress)) as T
     return (await engine.stitchPdf(msg.plan, onProgress)) as T
   }
@@ -108,6 +113,14 @@ export class PdfWorkerClient {
     onProgress: (p: SplitProgress) => void,
   ): Promise<Uint8Array[]> {
     return this.request<Uint8Array[]>({ type: 'split', bytes, ranges, title }, onProgress)
+  }
+
+  transform(bytes: ArrayBuffer, op: TransformOp): Promise<Uint8Array> {
+    return this.request<Uint8Array>({ type: 'transform', bytes, op })
+  }
+
+  readForm(bytes: ArrayBuffer): Promise<FormInfo> {
+    return this.request<FormInfo>({ type: 'readForm', bytes })
   }
 
   /** Aborts all in-flight work by tearing the worker down; a fresh one starts on demand. */

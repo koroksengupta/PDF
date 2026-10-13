@@ -4,11 +4,9 @@ import {
   PDFPage,
   StandardFonts,
   degrees,
-  popGraphicsState,
-  pushGraphicsState,
-  rgb,
   type PDFFont,
 } from 'pdf-lib'
+import { drawMarginLabel } from './edits'
 import { PdfInspectError } from './errors'
 import type {
   InspectResult,
@@ -101,22 +99,7 @@ export function formatPageNumber(
   }
 }
 
-/**
- * Isolates the page's existing content in q/Q so an unbalanced graphics state
- * (a stray transform left by the original producer) can't skew what we draw.
- */
-function isolateExistingContent(page: PDFPage) {
-  const ctx = page.doc.context
-  page.node.normalizedEntries()
-  const start = ctx.register(ctx.contentStream([pushGraphicsState()]))
-  const end = ctx.register(ctx.contentStream([popGraphicsState()]))
-  page.node.wrapContentStreams(start, end)
-}
-
-/**
- * Draws a footer label that sits at the *visual* bottom of the page, taking the
- * page's /Rotate into account (viewers rotate pages clockwise for display).
- */
+/** Footer label at the visual bottom of the page (upright on rotated pages). */
 export function drawFooterLabel(
   page: PDFPage,
   text: string,
@@ -124,51 +107,7 @@ export function drawFooterLabel(
   fontSize: number,
   position: PageNumberOptions['position'],
 ) {
-  const box = page.getCropBox()
-  const rotation = normalizeAngle(page.getRotation().angle)
-  const textWidth = font.widthOfTextAtSize(text, fontSize)
-  const margin = Math.max(18, fontSize * 2)
-  const side = Math.max(36, fontSize * 3)
-
-  // Visual width runs along the user-space axis that ends up horizontal on screen.
-  const visualWidth = rotation % 180 === 0 ? box.width : box.height
-  // Offset of the text's start along the visual horizontal axis.
-  const along =
-    position === 'left'
-      ? side
-      : position === 'right'
-        ? visualWidth - side - textWidth
-        : (visualWidth - textWidth) / 2
-
-  let x: number
-  let y: number
-  switch (rotation) {
-    case 90: // visual bottom = user-space right edge, text runs bottom→top
-      x = box.x + box.width - margin
-      y = box.y + along
-      break
-    case 180: // visual bottom = user-space top edge, text runs right→left
-      x = box.x + box.width - along
-      y = box.y + box.height - margin
-      break
-    case 270: // visual bottom = user-space left edge, text runs top→bottom
-      x = box.x + margin
-      y = box.y + box.height - along
-      break
-    default:
-      x = box.x + along
-      y = box.y + margin
-  }
-
-  isolateExistingContent(page)
-  page.drawText(text, {
-    x,
-    y,
-    size: fontSize,
-    font,
-    color: rgb(0.25, 0.25, 0.3),
-    rotate: degrees(rotation),
-  })
+  drawMarginLabel(page, text, font, fontSize, 'bottom', position)
 }
 
 /** Builds the stitched document. Pure: safe to run in a worker or in tests. */

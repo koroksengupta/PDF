@@ -6,7 +6,7 @@
  * workspace and its undo history, the split tool), so each one *retains* the ids it
  * uses and *releases* them when done. Bytes are freed once nobody holds them.
  */
-export type SourceOwner = 'library' | 'stitch' | 'split'
+export type SourceOwner = 'library' | 'stitch' | 'split' | 'tool'
 
 const bytesById = new Map<string, ArrayBuffer>()
 const owners = new Map<string, Set<SourceOwner>>()
