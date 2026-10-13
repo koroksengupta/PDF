@@ -1,13 +1,13 @@
 # PDF Stitch
 
-Merge, split, reorder, rotate and trim PDFs **entirely in your browser**. Files are read into memory with
+Merge, split, edit, sign, fill, watermark and number PDFs **entirely in your browser**. Files are read into memory with
 `ArrayBuffer`s and processed by [pdf-lib](https://pdf-lib.js.org/) in a Web Worker. Nothing is
 uploaded, and there is no backend.
 
 ## How it works
 
 1. **Upload first.** The home screen is a single upload area (or drop files anywhere on the page). Your files are listed with page counts and sizes, and you can add more or remove any.
-2. **Choose what to do:** **Merge PDFs** or **Split a PDF**. With several files, the Split card asks which file to split.
+2. **Choose what to do:** **Merge PDFs** (all files), or pick one file and choose **Edit & sign**, **Split**, **Fill form**, **Watermark** or **Page numbers**.
 3. **Work in the tool.** "← Your files" in the header (or the browser's Back button) returns to the file list without losing work in either tool. "Start over" clears everything.
 
 Files exist only in memory, so a reload always starts at the upload screen.
@@ -32,6 +32,33 @@ Files exist only in memory, so a reload always starts at the upload screen.
 - **Output:** a file name prefix (`prefix_part2_p6-30.pdf`) and delivery as **one ZIP** or **separate PDFs**. Download links for each file stay available afterwards, and the result is flagged as out of date when the settings change. Pages keep their original rotation.
 
 
+### Edit & sign
+
+- Tools: text boxes (wrapping, any size and colour), today's date, signatures, highlights, freehand drawing, boxes, ellipses, sticky notes and images.
+- Signatures can be drawn (mouse, finger or stylus), typed in a script font, or uploaded. Drawn signatures are cropped to the ink, and uploaded scans can have their white background removed. Signatures are reusable within the session.
+- Select, move (drag or arrow keys), resize from the corner handle (images keep their proportions), delete, and undo/redo.
+- Sticky notes are saved as real PDF comments; everything else becomes page content. Placement is rotation-aware, so items land where you put them even on rotated pages.
+
+### Fill form
+
+Reads the PDF's fields (text, multi-line, checkboxes, radio groups, dropdowns, lists), grouped by page and showing required and read-only fields. Only changed fields are written. **Lock the answers** flattens the form. Files without fields point you to Edit & sign instead.
+
+### Watermark
+
+Text (size, bold, colour) or image (PNG/JPEG/any browser-readable image), with opacity, angle, centred or tiled layout, and a page selection (`1-3, 5`). A live preview approximates the result.
+
+### Page numbers
+
+Header or footer, left/center/right, any template using `{n}` and `{total}` (e.g. `Page {n} of {total}`), a first number, font size, colour, and a page selection, e.g. `2-` to skip a cover page.
+
+Every single-file tool offers **Add to files** on its result, so steps can be chained (e.g. watermark, then merge).
+
+### Not included (and why)
+
+- **Requesting signatures from others** needs a server, email delivery and identity checks, which breaks the "nothing leaves your device" design.
+- **Certificate-based digital signatures** (PAdES) need a signing certificate and PKCS#7 tooling. Signatures here are visual: an image of your signature placed on the page.
+- Text uses the standard Helvetica font, which covers Western European characters; other scripts are replaced with `?` (form filling reports an error instead).
+
 ### Robustness
 
 - Errors are reported in toasts. Covered cases: non-PDFs, files that only look like PDFs, corrupted and empty files, password-protected or encrypted files, single files over 250 MB, and workspaces over 1 GB in total.
@@ -48,7 +75,7 @@ interactive form fields across documents. Encrypted PDFs must be unlocked before
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # engine, split, state and file-name unit tests (vitest)
+npm test           # engine, edits, split, state and file-name unit tests (vitest)
 npm run build      # type-check and build to dist/
 npm run preview    # serve the production build
 ```
@@ -62,6 +89,9 @@ Stack: React 19, TypeScript, Vite, Tailwind CSS v4, pdf-lib, pdfjs-dist (thumbna
 src/
   lib/pdfEngine.ts        pdf-lib wrapper: validation, merge, split, rotation, separators, page numbers
   lib/split.ts            split-point maths: even distribution, validation, ranges, file names
+  lib/edits.ts            page numbers, watermarks, annotations/signatures, form read/fill
+  lib/geometry.ts         visual ↔ PDF coordinates for rotated pages, page-list parsing
+  components/tools/       Edit & sign, Fill form, Watermark, Page numbers (+ shared frame)
   lib/pdfWorkerClient.ts  promise API over the engine worker (with main-thread fallback)
   workers/pdf.worker.ts   runs the engine off the main thread
   lib/thumbnails.ts       pdf.js render queue + object-URL lifecycle

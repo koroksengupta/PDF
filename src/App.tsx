@@ -1,25 +1,36 @@
-import { ArrowLeft, Layers, Scissors, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ClipboardList, Droplets, Hash, Layers, PenTool, Scissors, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Home } from './components/Home'
+import { Home, type SingleFileTool } from './components/Home'
 import { SplitView } from './components/SplitView'
 import { StitchView } from './components/StitchView'
 import { Toaster } from './components/Toaster'
+import { EditorTool } from './components/tools/EditorTool'
+import { FormTool } from './components/tools/FormTool'
+import { PageNumbersTool } from './components/tools/PageNumbersTool'
+import { WatermarkTool } from './components/tools/WatermarkTool'
+import { useToasts } from './hooks/useToasts'
 import { useIngest } from './hooks/useIngest'
 import { sourceStore } from './lib/sourceStore'
 import { thumbnails } from './lib/thumbnails'
 import type { SourceMeta } from './lib/types'
 
-type Screen = 'home' | 'merge' | 'split'
-
-const HASH: Record<Screen, string> = { home: '', merge: '#merge', split: '#split' }
-const screenFromHash = (): Screen =>
-  window.location.hash === '#merge' ? 'merge' : window.location.hash === '#split' ? 'split' : 'home'
-const urlFor = (screen: Screen) => window.location.pathname + window.location.search + HASH[screen]
+type Screen = 'home' | 'merge' | SingleFileTool
 
 const TOOLS = {
   merge: { title: 'Merge PDFs', icon: Layers },
   split: { title: 'Split a PDF', icon: Scissors },
+  edit: { title: 'Edit & sign', icon: PenTool },
+  form: { title: 'Fill form', icon: ClipboardList },
+  watermark: { title: 'Watermark', icon: Droplets },
+  numbers: { title: 'Page numbers', icon: Hash },
 } as const
+
+const screenFromHash = (): Screen => {
+  const h = window.location.hash.slice(1)
+  return h in TOOLS ? (h as Screen) : 'home'
+}
+const urlFor = (screen: Screen) =>
+  window.location.pathname + window.location.search + (screen === 'home' ? '' : `#${screen}`)
 
 export default function App() {
   // Files live only in memory, so a reload always starts at the upload screen.
@@ -28,7 +39,9 @@ export default function App() {
     return 'home'
   })
   const [files, setFiles] = useState<SourceMeta[]>([])
-  const [splitId, setSplitId] = useState<string | null>(null)
+  /** The file the one-file tools (split, edit, form, …) work on. */
+  const [toolFileId, setToolFileId] = useState<string | null>(null)
+  const { push } = useToasts()
   /** Bumped by "Start over" to remount both tools with a clean slate. */
   const [session, setSession] = useState(0)
 
@@ -38,19 +51,27 @@ export default function App() {
     setFiles((list) => [...list, meta])
   }, [])
   const upload = useIngest(addFile)
-  // Files picked from inside the split tool join the list and become the split target.
-  const addSplitFile = useCallback(
+  // Files picked from inside a one-file tool join the list and become its file.
+  const addToolFile = useCallback(
     (meta: SourceMeta) => {
       addFile(meta)
-      setSplitId(meta.id)
+      setToolFileId(meta.id)
     },
     [addFile],
   )
-  const splitUpload = useIngest(addSplitFile)
+  const toolUpload = useIngest(addToolFile)
+  // Results a tool hands back ("Add to files") join the list, ready to merge or edit further.
+  const addResult = useCallback(
+    (file: File) => {
+      upload.ingest([file])
+      push({ kind: 'success', title: 'Added to your files', description: `“${file.name}” is ready to merge or edit further.` })
+    },
+    [upload, push],
+  )
 
   const removeFile = useCallback((id: string) => {
     setFiles((list) => list.filter((f) => f.id !== id))
-    setSplitId((current) => (current === id ? null : current))
+    setToolFileId((current) => (current === id ? null : current))
     sourceStore.release(id, 'library')
   }, [])
 
@@ -74,7 +95,7 @@ export default function App() {
     if (files.length > 0 && !window.confirm('Remove all files and start over? Any unsaved work will be lost.')) return
     files.forEach((f) => sourceStore.release(f.id, 'library'))
     setFiles([])
-    setSplitId(null)
+    setToolFileId(null)
     setSession((s) => s + 1)
     setScreen('home')
     window.history.replaceState(null, '', urlFor('home'))
@@ -88,7 +109,16 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [files.length])
 
-  const splitTarget = files.find((f) => f.id === splitId) ?? null
+  const toolFile = files.find((f) => f.id === toolFileId) ?? null
+  const toolProps = {
+    file: toolFile,
+    pending: toolUpload.pending,
+    onChooseFile: toolUpload.ingest,
+    onRemoveFile: () => {
+      if (toolFile) removeFile(toolFile.id)
+    },
+    onAddToFiles: addResult,
+  }
   const tool = screen === 'home' ? null : TOOLS[screen]
 
   return (
@@ -140,11 +170,11 @@ export default function App() {
         onRemove={removeFile}
         onStartOver={startOver}
         onMerge={() => navigate('merge')}
-        splitId={splitTarget?.id ?? files[0]?.id ?? null}
-        onSplitIdChange={setSplitId}
-        onSplit={() => {
-          setSplitId(splitTarget?.id ?? files[0]?.id ?? null)
-          navigate('split')
+        toolFileId={toolFile?.id ?? files[0]?.id ?? null}
+        onToolFileChange={setToolFileId}
+        onOpenTool={(tool) => {
+          setToolFileId(toolFile?.id ?? files[0]?.id ?? null)
+          navigate(tool)
         }}
       />
       {/* Both tools stay mounted, so going back to the file list never loses work. */}
@@ -159,13 +189,15 @@ export default function App() {
       <SplitView
         key={`split-${session}`}
         active={screen === 'split'}
-        file={splitTarget}
-        pending={splitUpload.pending}
-        onChooseFile={splitUpload.ingest}
-        onRemoveFile={() => {
-          if (splitTarget) removeFile(splitTarget.id)
-        }}
+        file={toolFile}
+        pending={toolUpload.pending}
+        onChooseFile={toolUpload.ingest}
+        onRemoveFile={toolProps.onRemoveFile}
       />
+      <EditorTool key={`edit-${session}`} active={screen === 'edit'} {...toolProps} />
+      <FormTool key={`form-${session}`} active={screen === 'form'} {...toolProps} />
+      <WatermarkTool key={`watermark-${session}`} active={screen === 'watermark'} {...toolProps} />
+      <PageNumbersTool key={`numbers-${session}`} active={screen === 'numbers'} {...toolProps} />
       <Toaster />
     </div>
   )

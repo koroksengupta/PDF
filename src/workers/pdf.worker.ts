@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { readFormInfo, transformPdf } from '../lib/edits'
 import { PdfInspectError, inspectPdf, splitPdf, stitchPdf } from '../lib/pdfEngine'
 import type { WorkerRequest, WorkerResponse } from '../lib/pdfWorkerProtocol'
 
@@ -10,6 +11,11 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     if (msg.type === 'inspect') {
       post({ id: msg.id, type: 'result', result: await inspectPdf(msg.bytes) })
+    } else if (msg.type === 'transform') {
+      const bytes = await transformPdf(msg.bytes, msg.op)
+      post({ id: msg.id, type: 'result', result: bytes }, [bytes.buffer])
+    } else if (msg.type === 'readForm') {
+      post({ id: msg.id, type: 'result', result: await readFormInfo(msg.bytes) })
     } else if (msg.type === 'split') {
       const parts = await splitPdf(msg.bytes, msg.ranges, msg.title, (progress) =>
         post({ id: msg.id, type: 'progress', progress }),
