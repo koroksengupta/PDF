@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { PdfInspectError, inspectPdf, stitchPdf } from '../lib/pdfEngine'
+import { PdfInspectError, inspectPdf, splitPdf, stitchPdf } from '../lib/pdfEngine'
 import type { WorkerRequest, WorkerResponse } from '../lib/pdfWorkerProtocol'
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope
@@ -10,6 +10,11 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     if (msg.type === 'inspect') {
       post({ id: msg.id, type: 'result', result: await inspectPdf(msg.bytes) })
+    } else if (msg.type === 'split') {
+      const parts = await splitPdf(msg.bytes, msg.ranges, msg.title, (progress) =>
+        post({ id: msg.id, type: 'progress', progress }),
+      )
+      post({ id: msg.id, type: 'result', result: parts }, parts.map((p) => p.buffer))
     } else {
       const bytes = await stitchPdf(msg.plan, (progress) =>
         post({ id: msg.id, type: 'progress', progress }),

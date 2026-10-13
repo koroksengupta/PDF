@@ -9,9 +9,19 @@ interface Props {
   onFiles: (files: FileList | File[]) => void
   pending: PendingFile[]
   compact: boolean
+  title?: string
+  hint?: string
+  multiple?: boolean
 }
 
-export function DropZone({ onFiles, pending, compact }: Props) {
+export function DropZone({
+  onFiles,
+  pending,
+  compact,
+  title = 'Drop PDFs here to start stitching',
+  hint = 'select as many files as you like',
+  multiple = true,
+}: Props) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   const browse = () => input.current?.click()
@@ -40,7 +50,7 @@ export function DropZone({ onFiles, pending, compact }: Props) {
       ref={input}
       type="file"
       accept="application/pdf,.pdf"
-      multiple
+      multiple={multiple}
       className="sr-only"
       tabIndex={-1}
       aria-hidden
@@ -109,9 +119,9 @@ export function DropZone({ onFiles, pending, compact }: Props) {
         <div className="flex size-16 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
           <UploadCloud className="size-8" aria-hidden />
         </div>
-        <h2 className="mt-5 text-lg font-semibold text-slate-900 sm:text-xl">Drop PDFs here to start stitching</h2>
+        <h2 className="mt-5 text-lg font-semibold text-slate-900 sm:text-xl">{title}</h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          or <span className="font-medium text-indigo-600 underline underline-offset-2">browse your device</span> — select as many files as you like
+          or <span className="font-medium text-indigo-600 underline underline-offset-2">browse your device</span> — {hint}
         </p>
         <p className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
           <ShieldCheck className="size-3.5" aria-hidden /> Files are processed on this device and never uploaded

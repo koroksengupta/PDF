@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes, plural } from '../lib/format'
 import { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from '../lib/limits'
 import { PdfInspectError } from '../lib/errors'
 import { PdfWorkerClient } from '../lib/pdfWorkerClient'
 import { sourceStore } from '../lib/sourceStore'
 import type { SourceMeta } from '../lib/types'
-import { uid, type WorkspaceAction } from '../state/workspace'
+import { uid } from '../state/workspace'
 import { useToasts } from './useToasts'
 
 export interface PendingFile {
@@ -28,8 +28,11 @@ const INSPECT_TITLES: Record<PdfInspectError['code'], string> = {
   empty: 'Empty PDF',
 }
 
-/** Validates and loads dropped/picked files, one at a time, in the order given. */
-export function useIngest(dispatch: Dispatch<WorkspaceAction>) {
+/**
+ * Validates and loads dropped/picked files, one at a time, in the order given.
+ * `onSource` receives each accepted file; its bytes are already in sourceStore.
+ */
+export function useIngest(onSource: (meta: SourceMeta) => void) {
   const { push } = useToasts()
   const client = useMemo(() => new PdfWorkerClient(), [])
   const [pending, setPending] = useState<PendingFile[]>([])
@@ -115,8 +118,8 @@ export function useIngest(dispatch: Dispatch<WorkspaceAction>) {
             setPending((list) => list.filter((p) => p.key !== items[i].key))
           }
           if (meta) {
-            // Store write and dispatch happen in the same tick (see App's release effect).
-            dispatch({ type: 'addSources', sources: [meta] })
+            // Store write and hand-off happen in the same tick (see the release effects).
+            onSource(meta)
             added++
             pages += meta.pageCount
           }
@@ -135,7 +138,7 @@ export function useIngest(dispatch: Dispatch<WorkspaceAction>) {
         push({ kind: 'error', title: 'Could not add files', description: 'An unexpected error occurred.' })
       })
     },
-    [dispatch, processFile, push],
+    [onSource, processFile, push],
   )
 
   return { ingest, pending }

@@ -1,6 +1,7 @@
 import { PdfInspectError } from './errors'
 import type { WorkerRequest, WorkerResponse } from './pdfWorkerProtocol'
-import type { InspectResult, StitchPlan, StitchProgress } from './types'
+import type { PageRange } from './split'
+import type { InspectResult, SplitProgress, StitchPlan, StitchProgress } from './types'
 
 export class CancelledError extends Error {
   constructor() {
@@ -12,8 +13,10 @@ export class CancelledError extends Error {
 type Pending = {
   resolve: (value: unknown) => void
   reject: (err: unknown) => void
-  onProgress?: (p: StitchProgress) => void
+  onProgress?: (p: Progress) => void
 }
+
+type Progress = StitchProgress | SplitProgress
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
@@ -68,7 +71,7 @@ export class PdfWorkerClient {
 
   private request<T>(
     msg: DistributiveOmit<WorkerRequest, 'id'>,
-    onProgress?: (p: StitchProgress) => void,
+    onProgress?: (p: Progress) => void,
   ): Promise<T> {
     const worker = this.getWorker()
     if (!worker) return this.runInline<T>(msg, onProgress)
@@ -82,10 +85,11 @@ export class PdfWorkerClient {
 
   private async runInline<T>(
     msg: DistributiveOmit<WorkerRequest, 'id'>,
-    onProgress?: (p: StitchProgress) => void,
+    onProgress?: (p: Progress) => void,
   ): Promise<T> {
     const engine = await import('./pdfEngine')
     if (msg.type === 'inspect') return (await engine.inspectPdf(msg.bytes)) as T
+    if (msg.type === 'split') return (await engine.splitPdf(msg.bytes, msg.ranges, msg.title, onProgress)) as T
     return (await engine.stitchPdf(msg.plan, onProgress)) as T
   }
 
@@ -94,7 +98,16 @@ export class PdfWorkerClient {
   }
 
   stitch(plan: StitchPlan, onProgress: (p: StitchProgress) => void): Promise<Uint8Array> {
-    return this.request<Uint8Array>({ type: 'stitch', plan }, onProgress)
+    return this.request<Uint8Array>({ type: 'stitch', plan }, onProgress as (p: Progress) => void)
+  }
+
+  split(
+    bytes: ArrayBuffer,
+    ranges: PageRange[],
+    title: string,
+    onProgress: (p: SplitProgress) => void,
+  ): Promise<Uint8Array[]> {
+    return this.request<Uint8Array[]>({ type: 'split', bytes, ranges, title }, onProgress)
   }
 
   /** Aborts all in-flight work by tearing the worker down; a fresh one starts on demand. */

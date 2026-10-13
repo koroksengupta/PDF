@@ -13,9 +13,11 @@ import { PdfInspectError } from './errors'
 import type {
   InspectResult,
   PageNumberOptions,
+  SplitProgress,
   StitchPlan,
   StitchProgress,
 } from './types'
+import type { PageRange } from './split'
 
 export { PdfInspectError }
 
@@ -269,4 +271,46 @@ export async function stitchPdf(
   const result = await out.save({ useObjectStreams: true })
   onProgress({ phase: 'saving', done: 1, total: 1 })
   return result
+}
+
+/**
+ * Splits one PDF into several, one per range (1-based, inclusive). Each part is a
+ * standalone document; page rotation and content are preserved as-is.
+ */
+export async function splitPdf(
+  buffer: ArrayBuffer,
+  ranges: PageRange[],
+  title: string,
+  onProgress: (p: SplitProgress) => void = () => {},
+): Promise<Uint8Array[]> {
+  if (ranges.length === 0) throw new Error('No parts to create.')
+  let src: PDFDocument
+  try {
+    src = await PDFDocument.load(new Uint8Array(buffer), LOAD_OPTIONS)
+  } catch (err) {
+    throw new Error(
+      isEncryptedError(err) ? 'The file is encrypted and cannot be split.' : 'The file could not be read.',
+    )
+  }
+  const pageCount = src.getPageCount()
+  for (const r of ranges) {
+    if (!Number.isInteger(r.start) || !Number.isInteger(r.end) || r.start < 1 || r.end > pageCount || r.start > r.end) {
+      throw new Error(`Invalid page range ${r.start}–${r.end} for a ${pageCount}-page file.`)
+    }
+  }
+
+  const baseTitle = title.trim()
+  const parts: Uint8Array[] = []
+  onProgress({ done: 0, total: ranges.length })
+  for (const [i, r] of ranges.entries()) {
+    const out = await PDFDocument.create()
+    const indices = Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start - 1 + k)
+    for (const page of await out.copyPages(src, indices)) out.addPage(page)
+    if (baseTitle) out.setTitle(`${baseTitle} (part ${i + 1} of ${ranges.length})`)
+    out.setCreator('PDF Stitch')
+    out.setProducer('PDF Stitch (pdf-lib, in-browser)')
+    parts.push(await out.save({ useObjectStreams: true }))
+    onProgress({ done: i + 1, total: ranges.length })
+  }
+  return parts
 }
