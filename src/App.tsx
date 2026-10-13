@@ -9,6 +9,7 @@ import { FormTool } from './components/tools/FormTool'
 import { PageNumbersTool } from './components/tools/PageNumbersTool'
 import { WatermarkTool } from './components/tools/WatermarkTool'
 import { useToasts } from './hooks/useToasts'
+import { FEATURES } from './lib/features'
 import { useIngest } from './hooks/useIngest'
 import { sourceStore } from './lib/sourceStore'
 import { thumbnails } from './lib/thumbnails'
@@ -27,6 +28,7 @@ const TOOLS = {
 
 const screenFromHash = (): Screen => {
   const h = window.location.hash.slice(1)
+  if (h === 'form' && !FEATURES.fillForm) return 'home'
   return h in TOOLS ? (h as Screen) : 'home'
 }
 const urlFor = (screen: Screen) =>
@@ -195,7 +197,7 @@ export default function App() {
         onRemoveFile={toolProps.onRemoveFile}
       />
       <EditorTool key={`edit-${session}`} active={screen === 'edit'} {...toolProps} />
-      <FormTool key={`form-${session}`} active={screen === 'form'} {...toolProps} />
+      {FEATURES.fillForm && <FormTool key={`form-${session}`} active={screen === 'form'} {...toolProps} />}
       <WatermarkTool key={`watermark-${session}`} active={screen === 'watermark'} {...toolProps} />
       <PageNumbersTool key={`numbers-${session}`} active={screen === 'numbers'} {...toolProps} />
       <Toaster />

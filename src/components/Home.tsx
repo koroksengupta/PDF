@@ -5,6 +5,7 @@ import { formatBytes, plural } from '../lib/format'
 import type { SourceMeta } from '../lib/types'
 import { DropZone } from './DropZone'
 import { FileDropOverlay } from './FileDropOverlay'
+import { FEATURES } from '../lib/features'
 import { Thumbnail } from './Thumbnail'
 
 export type SingleFileTool = 'split' | 'edit' | 'form' | 'watermark' | 'numbers'
@@ -127,6 +128,7 @@ function Actions({ files, pending, onMerge, toolFileId, onToolFileChange, onOpen
   const pages = files.reduce((n, f) => n + f.pageCount, 0)
   const target = files.find((f) => f.id === toolFileId) ?? files[0]
   const single = files.length === 1
+  const tools = ONE_FILE_TOOLS.filter((t) => t.id !== 'form' || FEATURES.fillForm)
 
   return (
     <section aria-labelledby="actions-heading">
@@ -170,8 +172,8 @@ function Actions({ files, pending, onMerge, toolFileId, onToolFileChange, onOpen
             </>
           )}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {ONE_FILE_TOOLS.map(({ id, title, description, icon: Icon }) => {
+        <div className={`grid gap-3 sm:grid-cols-2 ${tools.length % 3 === 0 || tools.length > 4 ? 'lg:grid-cols-3' : ''}`}>
+          {tools.map(({ id, title, description, icon: Icon }) => {
             const disabled = busy || !target || (id === 'split' && target.pageCount < 2)
             return (
               <button
