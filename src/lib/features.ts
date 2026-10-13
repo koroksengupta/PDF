@@ -5,5 +5,5 @@
  */
 export const FEATURES = {
   /** Fill form: in progress on the `claude/fill-form` branch. */
-  fillForm: false,
+  fillForm: true,
 } as const
