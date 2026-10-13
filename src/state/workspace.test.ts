@@ -115,6 +115,20 @@ describe('workspace reducer', () => {
     expect(s.past.length).toBe(before)
   })
 
+  it('removes all pages of a file everywhere, including undo history, and frees the source', () => {
+    let s = withFiles()
+    const [a, b] = s.segments
+    s = run(s, { type: 'movePage', fromSegmentId: b.id, fromIndex: 0, toSegmentId: a.id, toIndex: 0 })
+    s = run(s, { type: 'removeSource', sourceId: 'b' })
+    expect(layout(s)).toEqual([['a0', 'a1', 'a2']])
+    expect(Object.keys(s.sources)).toEqual(['a'])
+    expect(run(s, { type: 'removeSource', sourceId: 'zzz' })).toBe(s)
+    // Undo still works for other edits, but never brings file b back.
+    s = run(s, { type: 'undo' })
+    expect(layout(s)).toEqual([['a0', 'a1', 'a2']])
+    expect(s.segments.flatMap((x) => x.pages).some((p) => p.sourceId === 'b')).toBe(false)
+  })
+
   it('clear resets everything, including history and sources', () => {
     const s = run(withFiles(), { type: 'clear' })
     expect(s).toEqual(initialWorkspace)

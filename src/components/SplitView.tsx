@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { useIngest } from '../hooks/useIngest'
+import type { PendingFile } from '../hooks/useIngest'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { useSplit, type SplitDelivery, type SplitStatus } from '../hooks/useSplit'
 import { useToasts } from '../hooks/useToasts'
@@ -28,7 +28,6 @@ import {
   validateSplitPoints,
   type SplitPoint,
 } from '../lib/split'
-import { thumbnails } from '../lib/thumbnails'
 import type { SourceMeta } from '../lib/types'
 import { DropZone } from './DropZone'
 import { FileDropOverlay } from './FileDropOverlay'
@@ -51,22 +50,19 @@ const baseNameOf = (fileName: string) => sanitizeFileName(fileName).replace(/\.p
 const inputClass =
   'w-full rounded-lg border bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:ring-2'
 
-export function SplitView({ active }: { active: boolean }) {
+interface SplitViewProps {
+  active: boolean
+  file: SourceMeta | null
+  pending: PendingFile[]
+  /** Adds a file to the upload list and makes it the one being split. */
+  onChooseFile: (files: FileList | File[]) => void
+  onRemoveFile: () => void
+}
+
+export function SplitView({ active, file, pending, onChooseFile, onRemoveFile }: SplitViewProps) {
   const { push } = useToasts()
-  const [file, setFile] = useState<SourceMeta | null>(null)
-  const [points, setPoints] = useState<SplitPoint[]>([])
-  const [baseName, setBaseName] = useState('')
-  const [delivery, setDelivery] = usePersistentState<SplitDelivery>('pdf-stitch:split-delivery:v1', 'zip', isDelivery)
-  const splitter = useSplit()
 
-  const onSource = useCallback((meta: SourceMeta) => {
-    setFile(meta)
-    setPoints(evenSplitPoints(meta.pageCount, 2))
-    setBaseName(baseNameOf(meta.name))
-  }, [])
-  const { ingest, pending } = useIngest(onSource)
-
-  const ingestOne = useCallback(
+  const chooseOne = useCallback(
     (files: FileList | File[]) => {
       const list = Array.from(files)
       if (list.length === 0) return
@@ -77,31 +73,58 @@ export function SplitView({ active }: { active: boolean }) {
           description: `Splitting works on a single PDF. Using “${list[0].name}”.`,
         })
       }
-      ingest([list[0]])
+      onChooseFile([list[0]])
     },
-    [ingest, push],
+    [onChooseFile, push],
   )
 
-  // Free the previous file's bytes and previews whenever it is replaced or removed.
-  const { dismiss } = splitter
-  const currentId = useRef<string | null>(null)
+  // Hold the file's bytes while it is the one being split.
+  const fileId = file?.id
   useEffect(() => {
-    const prev = currentId.current
-    if (prev && prev !== file?.id) {
-      sourceStore.delete(prev)
-      thumbnails.releaseSource(prev)
-      dismiss()
-    }
-    currentId.current = file?.id ?? null
-  }, [file?.id, dismiss])
-  useEffect(
-    () => () => {
-      if (currentId.current) sourceStore.delete(currentId.current)
-    },
-    [],
-  )
+    if (!fileId) return
+    sourceStore.retain(fileId, 'split')
+    return () => sourceStore.release(fileId, 'split')
+  }, [fileId])
 
-  const pageCount = file?.pageCount ?? 0
+  return (
+    <div hidden={!active}>
+      {file ? (
+        // Keyed by file: choosing another file starts with fresh settings and results.
+        <SplitWorkspace key={file.id} file={file} busy={pending.length > 0} onReplace={chooseOne} onRemove={onRemoveFile} />
+      ) : (
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+          <DropZone
+            onFiles={chooseOne}
+            pending={pending}
+            compact={false}
+            multiple={false}
+            title="Drop a PDF here to split it"
+            hint="choose how many parts and where to cut"
+          />
+        </main>
+      )}
+      {active && <FileDropOverlay onFiles={chooseOne} label={file ? 'Drop to split a different PDF' : 'Drop a PDF to split'} />}
+    </div>
+  )
+}
+
+function SplitWorkspace({
+  file,
+  busy,
+  onReplace,
+  onRemove,
+}: {
+  file: SourceMeta
+  busy: boolean
+  onReplace: (files: FileList | File[]) => void
+  onRemove: () => void
+}) {
+  const pageCount = file.pageCount
+  const [points, setPoints] = useState<SplitPoint[]>(() => evenSplitPoints(pageCount, 2))
+  const [baseName, setBaseName] = useState(() => baseNameOf(file.name))
+  const [delivery, setDelivery] = usePersistentState<SplitDelivery>('pdf-stitch:split-delivery:v1', 'zip', isDelivery)
+  const splitter = useSplit()
+
   const validation = useMemo(() => validateSplitPoints(points, pageCount), [points, pageCount])
   const ranges = useMemo(
     () => (validation.valid ? pointsToRanges(points as number[], pageCount) : null),
@@ -113,12 +136,12 @@ export function SplitView({ active }: { active: boolean }) {
     return new Set(valid)
   }, [points, validation.errors])
 
-  const signature = JSON.stringify([file?.id, points, baseName])
+  const signature = JSON.stringify([points, baseName])
   const stale = splitter.status.state === 'done' && splitter.status.signature !== signature
-  const canSplit = Boolean(file && ranges && pending.length === 0)
+  const canSplit = Boolean(ranges && !busy)
 
   const onSplit = () => {
-    if (!file || !ranges) return
+    if (!ranges) return
     void splitter.split({
       sourceId: file.id,
       ranges,
@@ -129,74 +152,57 @@ export function SplitView({ active }: { active: boolean }) {
   }
 
   const setParts = (n: number) => {
-    if (!file) return
     const clamped = Math.min(Math.max(2, Math.trunc(n)), maxParts(pageCount))
     setPoints(evenSplitPoints(pageCount, clamped))
   }
 
-  const removeFile = () => {
-    splitter.cancel()
-    setFile(null)
-    setPoints([])
-  }
-
   return (
-    <div hidden={!active}>
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
-        {!file ? (
-          <div className="lg:col-span-2">
-            <DropZone
-              onFiles={ingestOne}
-              pending={pending}
-              compact={false}
-              multiple={false}
-              title="Drop a PDF here to split it"
-              hint="choose how many parts and where to cut"
-            />
+    <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+      <FileHeader
+        file={file}
+        onReplace={onReplace}
+        onRemove={() => {
+          splitter.cancel()
+          onRemove()
+        }}
+        busy={busy}
+      />
+
+      <aside className="lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        {pageCount < 2 ? (
+          <div className="rounded-2xl bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
+            This PDF has a single page, so there is nothing to split.
           </div>
         ) : (
-          <>
-            <FileHeader file={file} onReplace={ingestOne} onRemove={removeFile} busy={pending.length > 0} />
-
-            <aside className="lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-              {pageCount < 2 ? (
-                <div className="rounded-2xl bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
-                  This PDF has a single page, so there is nothing to split.
-                </div>
-              ) : (
-                <SplitPanel
-                  pageCount={pageCount}
-                  points={points}
-                  errors={validation.errors}
-                  onPointsChange={setPoints}
-                  onPartsChange={setParts}
-                  baseName={baseName}
-                  onBaseNameChange={setBaseName}
-                  fallbackBaseName={baseNameOf(file.name)}
-                  delivery={delivery}
-                  onDeliveryChange={setDelivery}
-                  status={splitter.status}
-                  stale={stale}
-                  canSplit={canSplit}
-                  onSplit={onSplit}
-                  onCancel={splitter.cancel}
-                  onDismiss={splitter.dismiss}
-                  onDownloadParts={splitter.downloadParts}
-                />
-              )}
-            </aside>
-
-            <PageGrid
-              sourceId={file.id}
-              pageCount={pageCount}
-              cuts={cuts}
-              onToggleCut={(page) => setPoints((p) => toggleSplitPoint(p, page))}
-            />
-          </>
+          <SplitPanel
+            pageCount={pageCount}
+            points={points}
+            errors={validation.errors}
+            onPointsChange={setPoints}
+            onPartsChange={setParts}
+            baseName={baseName}
+            onBaseNameChange={setBaseName}
+            fallbackBaseName={baseNameOf(file.name)}
+            delivery={delivery}
+            onDeliveryChange={setDelivery}
+            status={splitter.status}
+            stale={stale}
+            canSplit={canSplit}
+            onSplit={onSplit}
+            onCancel={splitter.cancel}
+            onDismiss={splitter.dismiss}
+            onDownloadParts={splitter.downloadParts}
+          />
         )}
-      </main>
-      {active && <FileDropOverlay onFiles={ingestOne} label={file ? 'Drop to replace the PDF' : 'Drop a PDF to split'} />}
-    </div>
+      </aside>
+
+      <PageGrid
+        sourceId={file.id}
+        pageCount={pageCount}
+        cuts={cuts}
+        onToggleCut={(page) => setPoints((p) => toggleSplitPoint(p, page))}
+      />
+    </main>
   )
 }
 
@@ -207,7 +213,7 @@ function FileHeader({
   busy,
 }: {
   file: SourceMeta
-  onReplace: (files: FileList) => void
+  onReplace: (files: FileList | File[]) => void
   onRemove: () => void
   busy: boolean
 }) {
@@ -232,7 +238,7 @@ function FileHeader({
         className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40"
       >
         {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <RefreshCw className="size-4" aria-hidden />}
-        <span className="hidden sm:inline">Replace</span>
+        <span className="hidden sm:inline">Another file</span>
       </button>
       <button
         type="button"

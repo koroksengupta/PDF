@@ -1,4 +1,4 @@
-import { ChevronsDownUp, ChevronsUpDown, Redo2, SortAsc, Trash2, Undo2 } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, Redo2, RotateCcw, SortAsc, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { SourceMeta } from '../lib/types'
 import { Canvas } from './Canvas'
@@ -7,13 +7,12 @@ import { PagePreview } from './PagePreview'
 import { SettingsPanel } from './SettingsPanel'
 import { StitchAction } from './StitchAction'
 import { FileDropOverlay } from './FileDropOverlay'
-import { useIngest } from '../hooks/useIngest'
+import type { PendingFile } from '../hooks/useIngest'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { stitchSignature, useStitch } from '../hooks/useStitch'
 import { formatBytes, plural } from '../lib/format'
 import { DEFAULT_SETTINGS, isStitchSettings } from '../lib/settings'
 import { sourceStore } from '../lib/sourceStore'
-import { thumbnails } from '../lib/thumbnails'
 import type { StitchOptions } from '../lib/types'
 import { initialWorkspace, workspaceReducer, workspaceStats } from '../state/workspace'
 import { WorkspaceContext, type WorkspaceContextValue } from '../state/WorkspaceContext'
@@ -21,30 +20,65 @@ import { WorkspaceContext, type WorkspaceContextValue } from '../state/Workspace
 const toolbarBtn =
   'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-slate-200 disabled:pointer-events-none disabled:opacity-40'
 
-/** The merge workspace. Stays mounted while hidden so switching tabs keeps your work. */
-export function StitchView({ active }: { active: boolean }) {
+interface Props {
+  active: boolean
+  /** The upload list. New files are added to the workspace; removed ones are taken out. */
+  files: SourceMeta[]
+  pending: PendingFile[]
+  onAddFiles: (files: FileList | File[]) => void
+  onStartOver: () => void
+}
+
+/** The merge workspace. Stays mounted while hidden so going back to the file list keeps your work. */
+export function StitchView({ active, files, pending, onAddFiles, onStartOver }: Props) {
   const [state, dispatch] = useReducer(workspaceReducer, initialWorkspace)
-  const addSource = useCallback((meta: SourceMeta) => dispatch({ type: 'addSources', sources: [meta] }), [])
-  const { ingest, pending } = useIngest(addSource)
+  const ingest = onAddFiles
+
+  // Mirror the upload list: add each file once, and drop files removed from the list.
+  const offered = useRef(new Set<string>())
+  useEffect(() => {
+    const ids = new Set(files.map((f) => f.id))
+    const added = files.filter((f) => !offered.current.has(f.id))
+    if (added.length > 0) {
+      added.forEach((f) => offered.current.add(f.id))
+      dispatch({ type: 'addSources', sources: added })
+    }
+    for (const id of offered.current) {
+      if (!ids.has(id)) {
+        offered.current.delete(id)
+        dispatch({ type: 'removeSource', sourceId: id })
+      }
+    }
+  }, [files])
   const stitcher = useStitch()
   const [settings, setSettings] = usePersistentState('pdf-stitch:settings:v1', DEFAULT_SETTINGS, isStitchSettings)
   const [preview, setPreview] = useState<{ segmentId: string; pageId: string } | null>(null)
 
   // ── Memory hygiene ────────────────────────────────────────────────────────
-  // Free bytes, pdf.js documents and thumbnail object URLs of sources that left the
-  // workspace (and its undo history). Only ids that were once in state are released,
-  // so a file whose bytes were just stored but whose dispatch hasn't rendered is safe.
-  const knownSources = useRef(new Set<string>())
+  // Hold the bytes of every file the workspace (or its undo history) still uses,
+  // and let go as soon as it doesn't; the store frees them once nobody holds them.
+  const held = useRef(new Set<string>())
   useEffect(() => {
-    for (const id of Object.keys(state.sources)) knownSources.current.add(id)
-    for (const id of knownSources.current) {
+    for (const id of Object.keys(state.sources)) {
+      if (!held.current.has(id)) {
+        held.current.add(id)
+        sourceStore.retain(id, 'stitch')
+      }
+    }
+    for (const id of held.current) {
       if (!state.sources[id]) {
-        knownSources.current.delete(id)
-        sourceStore.delete(id)
-        thumbnails.releaseSource(id)
+        held.current.delete(id)
+        sourceStore.release(id, 'stitch')
       }
     }
   }, [state.sources])
+  useEffect(() => {
+    const ids = held.current
+    return () => {
+      ids.forEach((id) => sourceStore.release(id, 'stitch'))
+      ids.clear()
+    }
+  }, [])
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const stats = useMemo(() => workspaceStats(state), [state])
@@ -105,16 +139,6 @@ export function StitchView({ active }: { active: boolean }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [active])
 
-  // Warn before leaving with work on the canvas: nothing is saved anywhere.
-  useEffect(() => {
-    if (state.segments.length === 0) return
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [state.segments.length])
-
   const openPreview = useCallback((segmentId: string, pageId: string) => setPreview({ segmentId, pageId }), [])
   const closePreview = useCallback(() => setPreview(null), [])
   const ctx: WorkspaceContextValue = useMemo(
@@ -158,7 +182,7 @@ export function StitchView({ active }: { active: boolean }) {
 
         <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
           <div className="min-w-0 space-y-4">
-            <DropZone onFiles={ingest} pending={pending} compact={hasWork} />
+            <DropZone onFiles={ingest} pending={pending} compact={hasWork} title="Drop PDFs here to merge them" />
 
             {hasWork && (
               <>
@@ -185,17 +209,8 @@ export function StitchView({ active }: { active: boolean }) {
                   <button type="button" className={toolbarBtn} onClick={() => dispatch({ type: 'sortSegments' })} disabled={state.segments.length < 2}>
                     <SortAsc className="size-4" aria-hidden /> Sort A–Z
                   </button>
-                  <button
-                    type="button"
-                    className={`${toolbarBtn} hover:text-red-600`}
-                    onClick={() => {
-                      if (window.confirm('Remove all files from the workspace? This cannot be undone.')) {
-                        dispatch({ type: 'clear' })
-                        stitcher.dismiss()
-                      }
-                    }}
-                  >
-                    <Trash2 className="size-4" aria-hidden /> Clear all
+                  <button type="button" className={`${toolbarBtn} hover:text-red-600`} onClick={onStartOver}>
+                    <RotateCcw className="size-4" aria-hidden /> Start over
                   </button>
                 </div>
                 <p className="-mt-2 text-xs text-slate-500">

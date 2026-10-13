@@ -43,7 +43,7 @@ export function StitchAction({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct}
-          aria-label="Stitching progress"
+          aria-label="Merge progress"
         >
           <div className="h-full rounded-full bg-indigo-600 transition-[width] duration-200" style={{ width: `${pct}%` }} />
           {indeterminate && (
@@ -70,7 +70,7 @@ export function StitchAction({
       className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
     >
       <Layers className="size-5" aria-hidden />
-      Stitch PDFs
+      Merge PDFs
       {outputPages > 0 && variant === 'panel' && (
         <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-medium">{plural(outputPages, 'page')}</span>
       )}
