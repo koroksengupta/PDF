@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CancelledError, PdfWorkerClient } from '../lib/pdfWorkerClient'
+import { triggerDownload } from '../lib/dom'
 import { sourceStore } from '../lib/sourceStore'
 import type { Segment, StitchOptions, StitchPlan, StitchProgress } from '../lib/types'
 import { useToasts } from './useToasts'
@@ -54,17 +55,6 @@ export function buildPlan(segments: Segment[], options: StitchOptions): StitchPl
     return { id, bytes }
   })
   return { sources, segments: groups, options }
-}
-
-function triggerDownload(url: string, fileName: string) {
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  a.rel = 'noopener'
-  a.style.display = 'none'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
 }
 
 export function useStitch() {

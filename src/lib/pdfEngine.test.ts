@@ -1,7 +1,7 @@
 import { PDFDocument, degrees } from 'pdf-lib'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { describe, expect, it } from 'vitest'
-import { PdfInspectError, formatPageNumber, hasPdfHeader, inspectPdf, stitchPdf } from './pdfEngine'
+import { PdfInspectError, formatPageNumber, hasPdfHeader, inspectPdf, splitPdf, stitchPdf } from './pdfEngine'
 import type { StitchOptions, StitchPlan, StitchPlanPage } from './types'
 
 const toBuffer = (u8: Uint8Array) =>
@@ -220,5 +220,43 @@ describe('page numbers', () => {
     }
     expect(labels).toEqual(['Page 1 of 6', 'Page 2 of 6', 'Page 3 of 6', 'Page 4 of 6', 'Page 6 of 6'])
     await pdf.destroy()
+  })
+})
+
+describe('splitPdf', () => {
+  it('creates one document per range, preserving order and rotation', async () => {
+    const src = await makePdf(
+      Array.from({ length: 10 }, (_, i) => [100, 101 + i] as [number, number]),
+      [0, 0, 0, 0, 90],
+    )
+    const progress: number[] = []
+    const parts = await splitPdf(
+      src,
+      [
+        { start: 1, end: 4 },
+        { start: 5, end: 7 },
+        { start: 8, end: 10 },
+      ],
+      'Report',
+      (p) => progress.push(p.done),
+    )
+    expect(parts).toHaveLength(3)
+    const described = await Promise.all(parts.map(describePages))
+    expect(described.map((d) => d.map((p) => p.h))).toEqual([
+      [101, 102, 103, 104],
+      [105, 106, 107],
+      [108, 109, 110],
+    ])
+    expect(described[1][0].rot).toBe(90)
+    expect(progress).toEqual([0, 1, 2, 3])
+    const doc = await PDFDocument.load(parts[2], { updateMetadata: false })
+    expect(doc.getTitle()).toBe('Report (part 3 of 3)')
+  })
+
+  it('rejects invalid ranges', async () => {
+    const src = await makePdf([[100, 100], [100, 100]])
+    await expect(splitPdf(src, [], '')).rejects.toThrow(/No parts/)
+    await expect(splitPdf(src, [{ start: 1, end: 3 }], '')).rejects.toThrow(/Invalid page range/)
+    await expect(splitPdf(src, [{ start: 2, end: 1 }], '')).rejects.toThrow(/Invalid page range/)
   })
 })

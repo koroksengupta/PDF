@@ -71,3 +71,8 @@ export type InspectErrorCode = 'not-pdf' | 'encrypted' | 'corrupt' | 'empty'
 export interface InspectResult {
   pageCount: number
 }
+
+export interface SplitProgress {
+  done: number
+  total: number
+}
