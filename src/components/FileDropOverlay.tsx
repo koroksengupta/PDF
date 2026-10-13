@@ -8,6 +8,10 @@ export function FileDropOverlay({ onFiles, label }: { onFiles: (files: FileList)
 
   useEffect(() => {
     let depth = 0
+    const reset = () => {
+      depth = 0
+      setDragging(false)
+    }
     const enter = (e: DragEvent) => {
       if (!hasFiles(e)) return
       depth++
@@ -21,22 +25,37 @@ export function FileDropOverlay({ onFiles, label }: { onFiles: (files: FileList)
     const over = (e: DragEvent) => {
       if (hasFiles(e)) e.preventDefault() // otherwise the browser opens the PDF itself
     }
+    // Capture phase: runs before any drop zone can stop the event, so the overlay
+    // always clears, however the drop is handled.
+    const dropCapture = (e: DragEvent) => {
+      if (hasFiles(e)) reset()
+    }
+    // Bubble phase: only take files no drop zone has already handled.
     const drop = (e: DragEvent) => {
-      depth = 0
-      setDragging(false)
-      if (!hasFiles(e)) return
+      if (!hasFiles(e) || e.defaultPrevented) return
       e.preventDefault()
       if (e.dataTransfer?.files.length) onFiles(e.dataTransfer.files)
+    }
+    // Safety net for cancelled drags (Esc, or leaving the window, where browsers
+    // don't always send a final dragleave): pointer events resume only after a drag ends.
+    const pointerMove = () => {
+      if (depth > 0) reset()
     }
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragleave', leave)
     window.addEventListener('dragover', over)
+    window.addEventListener('drop', dropCapture, true)
     window.addEventListener('drop', drop)
+    window.addEventListener('dragend', reset)
+    window.addEventListener('pointermove', pointerMove)
     return () => {
       window.removeEventListener('dragenter', enter)
       window.removeEventListener('dragleave', leave)
       window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', dropCapture, true)
       window.removeEventListener('drop', drop)
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('pointermove', pointerMove)
     }
   }, [onFiles])
 
