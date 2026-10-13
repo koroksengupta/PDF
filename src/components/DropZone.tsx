@@ -38,8 +38,9 @@ export function DropZone({
     },
     onDrop: (e: DragEvent) => {
       if (!hasFiles(e)) return
+      // preventDefault marks the drop as handled, so the page-wide handler won't add the
+      // files again; the event still bubbles so the page-wide overlay can close.
       e.preventDefault()
-      e.stopPropagation()
       setOver(false)
       onFiles(e.dataTransfer.files)
     },
