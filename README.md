@@ -39,7 +39,10 @@ Files exist only in memory, so a reload always starts at the upload screen.
 - Select, move (drag or arrow keys), resize from the corner handle (images keep their proportions), delete, and undo/redo.
 - Sticky notes are saved as real PDF comments; everything else becomes page content. Placement is rotation-aware, so items land where you put them even on rotated pages.
 
-### Fill form
+### Fill form (hidden for now)
+
+> Switched off in `src/lib/features.ts` while it is being improved on the `claude/fill-form` branch.
+
 
 Reads the PDF's fields (text, multi-line, checkboxes, radio groups, dropdowns, lists), grouped by page and showing required and read-only fields. Only changed fields are written. **Lock the answers** flattens the form. Files without fields point you to Edit & sign instead.
 
